@@ -563,6 +563,59 @@ catch_exit_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 }
+get_autopkg_trust_behavior()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	R=$(defaults read com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO 2>/dev/null)
+	if [ $? -ne 0 ]; then
+		debug_print -B -S "(${FUNCNAME[0]}) Key FAIL_RECIPES_WITHOUT_TRUST_INFO not set or some other error ($?)."
+		return 66
+	else
+		case "$R" in
+			0)
+				debug_print -R -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to False."
+				return 0
+				;;
+			1)
+				debug_print -G -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to True."
+				return 1
+				;;
+			*)
+				debug_print -R -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to Unknown value: $R."
+				return 66
+				;;
+			esac
+	fi
+}
+set_autopkg_trust_behavior()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments provided."
+	case "$1" in
+		0 | "true" | "yes" | "YES" | "TRUE")
+			action="write"
+			value="-bool YES"
+			;;
+		1 | "false" | "no" | "NO" | "FALSE")
+			action="write"
+			value="-bool NO"
+			;;
+		"NONE" | "none" | "RESET" | "reset")
+			value=""
+			action="delete"
+			;;
+		*)
+			fail_notice_exit "(${FUNCNAME[0]}) Incorrect argument provided."
+			;;
+	esac
+	defaults $action com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO $value
+	return_code=$?
+	case "$return_code" in
+		0) debug_print -G -S "(${FUNCNAME[0]}) Successful action $action to FAIL_RECIPES_WITHOUT_TRUST_INFO with value: $value";;
+		*) debug_print -R -S "(${FUNCNAME[0]}) Failed action $action to FAIL_RECIPES_WITHOUT_TRUST_INFO with value: $value" ;;
+	esac
+	return $return_codes
+}
 debug_state_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
@@ -571,6 +624,7 @@ debug_state_custom()
 main_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+
 	for R in "${RECIPE_NAMES[@]}"
 	do
 		BLOCK="##########"
@@ -598,6 +652,15 @@ parse_args_custom()
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 	while [ ${#} -gt 0 ]; do
 		case "${1}" in
+			"--get-trust-behavior")
+				get_autopkg_trust_behavior
+				case "$?" in
+					0) local_print -R -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = FALSE";;
+					1) local_print -G -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = TRUE";;
+					*) local_print -Y -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = NOT SET";;
+				esac
+				exit 0
+				;;
 			"--info" | "--i") INFO=$(var_toggle $INFO) ;;
 			"--name" | "--n")
 				RECIPE_NAMES=$( "${RECIPE_NAMES[@]}" "$2")
@@ -609,6 +672,11 @@ parse_args_custom()
 				shift
 				;;
 			"--select" | "--s") SELECT=$(var_toggle $SELECT) ;;
+			"--set-trust-behavior-"*)
+				set_autopkg_trust_behavior "$(echo $1 | cut -d '-' -f6)"
+				[ $? -ne 0 ] && fail_notice_exit "Failed to set FAIL_RECIPES_WITHOUT_TRUST_INFO to $(echo $1 | cut -d '-' -f6)"
+				exit 0
+				;;
 			"--trust" | "-t") TRUST=$(var_toggle $TRUST) ;;
 			"--verify" | "-v") VERIFY=$(var_toggle $VERIFY) ;;
 			*)
@@ -647,6 +715,7 @@ usage_custom()
 	echo -n "	[--info|-i]: Show recipe info. Default: "
 	[ $INFO -eq 0 ] && local_print -R "$(var_state $INFO)"
 	[ $INFO -eq 1 ] && local_print -G "$(var_state $INFO)"
+	echo "	[--name|-n] recipe: Specifiy a recipe name. Use this flage for each recipe. Specifying 'ALL' will select all recipes available in the OVERRIDE_DIR."
 	echo "	--override-dir absolute-path-to-dir: Set the Override Directory. Default: $OVERRIDE_DIR"
 	echo -n "	[--select|-s]: Interactively select a recipe from specified Override Directory. Default: "
 	[ $SELECT -eq 0 ] && local_print -R "$(var_state $SELECT)"
@@ -657,6 +726,10 @@ usage_custom()
 	echo -n "	[--verify|-v]: Verify trust info. Default: "
 	[ $VERIFY -eq 0 ] && local_print -R "$(var_state $VERIFY)"
 	[ $VERIFY -eq 1 ] && local_print -G "$(var_state $VERIFY)"
+	echo ""
+	echo "	[OPTIONS]"
+	echo "	--get-trust-behavior: Retrieve the value of FAIL_RECIPES_WITHOUT_TRUST_INFO from com.github.autopkg."
+	echo "	--set-trust-behavior-[true|false|none]: Set the value of FAIL_RECIPES_WITHOUT_TRUST_INFO for com.github.autopkg to true, false or none."
 }
 #### ####
 
