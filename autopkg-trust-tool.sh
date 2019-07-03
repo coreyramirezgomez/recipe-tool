@@ -663,11 +663,11 @@ parse_args_custom()
 				;;
 			"--info" | "--i") INFO=$(var_toggle $INFO) ;;
 			"--name" | "--n")
-				RECIPE_NAMES=$( "${RECIPE_NAMES[@]}" "$2")
+				RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "$2")
 				shift
 				;;
 			"--override-dir")
-				[ -d "$2" ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid override_dir, it is not a directory: $2"
+				[ ! -d "$2" ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid override_dir, it is not a directory: $2"
 				OVERRIDE_DIR="$2"
 				shift
 				;;
@@ -682,7 +682,7 @@ parse_args_custom()
 			*)
 				debug_print -e -B -S "Processing Unknown Argument: $1"
 				if [ ${#} -eq 1 ];then
-					RECIPE_NAMES=$( "${RECIPE_NAMES[@]}" "$1")
+					RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "$1")
 				else
 					fail_notice_exit "(${FUNCNAME[0]}) Unknown argument: $1" 1
 				fi
