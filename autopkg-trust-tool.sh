@@ -38,7 +38,7 @@ LOGGING=0
 
 #### Custom Variables ####
 INFO=0
-OVERRIDE_DIR="/Volumes/Munki AutoPkgr/Overrides/"
+OVERRIDE_DIR="$HOME/Library/AutoPkg/RecipeRepos/"
 SELECT=0
 TRUST=0
 VERIFY=0
