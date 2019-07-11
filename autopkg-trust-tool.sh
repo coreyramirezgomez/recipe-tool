@@ -38,7 +38,7 @@ LOGGING=0
 
 #### Custom Variables ####
 INFO=0
-OVERRIDE_DIR="$HOME/Library/AutoPkg/RecipeRepos/"
+OVERRIDE_DIR="$(defaults read com.github.autopkg RECIPE_OVERRIDE_DIRS)"
 SELECT=0
 TRUST=0
 VERIFY=0
