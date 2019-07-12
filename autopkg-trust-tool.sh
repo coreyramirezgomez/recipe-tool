@@ -692,9 +692,15 @@ parse_args_custom()
 	done
 	[ ! -d "$OVERRIDE_DIR" ] && fail_notice_exit "(${FUNCNAME[0]}) OVERRIDE_DIR ($OVERRIDE_DIR) does not exist."
 	if [ $SELECT -eq 1 ]; then
-		recipes=( $(ls "$OVERRIDE_DIR") "ALL" )
+		cd "$OVERRIDE_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $OVERRIDE_DIR."
+		for f in *
+		do
+			recipes=( "$f" "${recipes[@]}" )
+		done
+		recipes=( "${recipes[@]}" "ALL" )
 		option_selector "${recipes[@]}"
 		RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${recipes[$?]}" )
+		cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
 	fi
 	if [ ${#RECIPE_NAMES[@]} -eq  0 ]; then
 		fail_notice_exit "(${FUNCNAME[0]}) No recipe names specifed."
@@ -739,7 +745,7 @@ option_selector()
 	# Only returns the index of the options. Need to manually get the item from the list.
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 	[ $# -lt 2 ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid use of option_selector. Missing args."
-	INPUT_OPTS=( $@ )
+	INPUT_OPTS=( "$@" )
 	INDEX=0
 	for o in "${INPUT_OPTS[@]}"
 	do
