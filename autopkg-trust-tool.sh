@@ -691,24 +691,25 @@ parse_args_custom()
 		shift 1
 	done
 	[ ! -d "$OVERRIDE_DIR" ] && fail_notice_exit "(${FUNCNAME[0]}) OVERRIDE_DIR ($OVERRIDE_DIR) does not exist."
+	# Get available override names, since we might need them later.
+	cd "$OVERRIDE_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $OVERRIDE_DIR."
+	available_overrides=()
+	for f in *
+	do
+		available_overrides=( "$f" "${available_overrides[@]}" )
+	done
+	available_overrides=( "${available_overrides[@]}" "ALL" )
+	cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
+
 	if [ $SELECT -eq 1 ]; then
-		cd "$OVERRIDE_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $OVERRIDE_DIR."
-		for f in *
-		do
-			recipes=( "$f" "${recipes[@]}" )
-		done
-		recipes=( "${recipes[@]}" "ALL" )
-		option_selector "${recipes[@]}"
-		RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${recipes[$?]}" )
-		cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
+		option_selector "${available_overrides[@]}"
+		RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${available_overrides[$?]}" )
 	fi
-	if [ ${#RECIPE_NAMES[@]} -eq  0 ]; then
-		fail_notice_exit "(${FUNCNAME[0]}) No recipe names specifed."
-	fi
+	[ ${#RECIPE_NAMES[@]} -eq  0 ] && fail_notice_exit "(${FUNCNAME[0]}) No recipe names specifed."
 	for R in "${RECIPE_NAMES[@]}"
 	do
 		if [[ "$R" == "ALL" ]]; then
-			RECIPE_NAMES=( $(ls "$OVERRIDE_DIR") )
+			RECIPE_NAMES=( "${available_overrides[@]}" )
 			break
 		fi
 	done
