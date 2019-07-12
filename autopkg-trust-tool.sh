@@ -698,11 +698,10 @@ parse_args_custom()
 	do
 		available_overrides=( "$f" "${available_overrides[@]}" )
 	done
-	available_overrides=( "${available_overrides[@]}" "ALL" )
 	cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
 
 	if [ $SELECT -eq 1 ]; then
-		option_selector "${available_overrides[@]}"
+		option_selector "${available_overrides[@]}" "ALL"
 		RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${available_overrides[$?]}" )
 	fi
 	[ ${#RECIPE_NAMES[@]} -eq  0 ] && fail_notice_exit "(${FUNCNAME[0]}) No recipe names specifed."
