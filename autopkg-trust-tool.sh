@@ -694,10 +694,13 @@ parse_args_custom()
 	# Get available override names, since we might need them later.
 	cd "$OVERRIDE_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $OVERRIDE_DIR."
 	available_overrides=()
-	for f in *
+	for f in *.recipe
 	do
-		available_overrides=( "$f" "${available_overrides[@]}" )
+		available_overrides=( "${available_overrides[@]}" "$f" )
 	done
+	IFS=$'\n'
+	available_overrides=( $(sort -f <<< "${available_overrides[*]}" ) )
+	unset IFS
 	cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
 
 	if [ $SELECT -eq 1 ]; then
