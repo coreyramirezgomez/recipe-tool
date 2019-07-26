@@ -704,8 +704,43 @@ parse_args_custom()
 	cd "$WORK_DIR" || fail_notice_exit "(${FUNCNAME[0]}) Failed to cd into $WORK_DIR"
 
 	if [ $SELECT -eq 1 ]; then
-		option_selector "${available_overrides[@]}" "ALL"
-		RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${available_overrides[$?]}" )
+		while :
+		do
+			INDEX=0
+			for o in "${available_overrides[@]}" "ALL"
+			do
+				enabled=0
+				for n in "${RECIPE_NAMES[@]}"
+				do
+					[[ "$o" == "$n" ]] && enabled=1 && break
+				done
+				if [ $enabled -eq 1 ]; then
+					cprint -G -S "[$INDEX] $o"
+				else
+					cprint -R -S "[$INDEX] $o"
+				fi
+				((INDEX++))
+			done
+			index_selection=-1
+			echo -n "Select an option (enter to finish): "
+			read index_selection
+			if [[ $index_selection =~ ^[0-9]+$ ]] && [ $index_selection -gt -1 ]; then
+				if [ $index_selection -lt ${#available_overrides[@]} ]; then
+					RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "${available_overrides[$index_selection]}" )
+				elif [ $index_selection -eq ${#available_overrides[@]} ]; then
+					RECIPE_NAMES=( "${available_overrides[@]}" )
+					break
+				else
+					local_print -e -Y -S "Invalid selection: $index_selection"
+					index_selection=-1
+				fi
+			elif [[ "$index_selection" == "" ]]; then
+				break
+			else
+				local_print -e -Y -S "Invalid selection: $index_selection"
+				index_selection=-1
+			fi
+		done
 	fi
 	[ ${#RECIPE_NAMES[@]} -eq  0 ] && fail_notice_exit "(${FUNCNAME[0]}) No recipe names specifed."
 	for R in "${RECIPE_NAMES[@]}"
@@ -743,31 +778,6 @@ usage_custom()
 #### ####
 
 #### Custom Functions ####
-option_selector()
-{
-	# Only returns the index of the options. Need to manually get the item from the list.
-	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
-	[ $# -lt 2 ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid use of option_selector. Missing args."
-	INPUT_OPTS=( "$@" )
-	INDEX=0
-	for o in "${INPUT_OPTS[@]}"
-	do
-		echo "[$INDEX] $o"
-		((INDEX++))
-	done
-	index_selection=-1
-	while [ $index_selection -lt 0 ] || [ $index_selection -gt $(((${#INPUT_OPTS[@]}-1))) ]
-	do
-		echo -n "Select an option: "
-		read index_selection
-		if [[ $index_selection =~ ^[0-9]+$ ]] && [ $index_selection -gt -1 ] && [ $index_selection -lt ${#INPUT_OPTS[@]} ]; then
-			return "$index_selection"
-		else
-			local_print -e -Y -S "Invalid selection: $index_selection"
-			index_selection=-1
-		fi
-	done
-}
 #### ####
 
 #### Customizable Script Entry ####
