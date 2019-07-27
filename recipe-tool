@@ -1,7 +1,7 @@
 #!/bin/bash
 #### Non-Customizable Header ####
-# BASH_BOILER_VERSION=2019.07.02.01
-# Generated with Bash-Boiler on 07-02-19_16:23:49
+# BASH_BOILER_VERSION=2019.07.11.01
+# Generated with Bash-Boiler on 07-26-19_17:44:09
 # Use updater to update this script:
 # https://github.com/coreyramirezgomez/Bash-Boiler.git
 # Modifying any content between blocks like the following:
@@ -17,16 +17,14 @@ trap catch_exit $?
 
 #### Non-Customizable Global Variables ####
 QUIET=""
-START_TIME=$(date +%s)
+START_TIME="$(date +%s)"
 START_DATE="$(date +%m-%d-%y_%H:%M:%S)"
 VERBOSE=""
-BINARIES_MISSING=()
 #### ####
 
 #### Customizable Variables ####
 ARGS_REQUIRED=1
-BINARIES_OPTIONAL=()
-BINARIES_REQUIRED=( "autopkg" )
+BINARIES_REQUIRED=( "autopkg" "/usr/libexec/PlistBuddy" )
 GARBAGE_COLLECTOR=0
 GARBAGE=()
 DEBUG=0
@@ -40,16 +38,18 @@ LOGGING=0
 INFO=0
 OVERRIDE_DIR="$(defaults read com.github.autopkg RECIPE_OVERRIDE_DIRS)"
 SELECT=0
-TRUST=0
-VERIFY=0
 RECIPE_NAMES=()
+ADD_CATALOGS=()
+REMOVE_CATALOGS=()
+FORMAT_SUBDIR=0
 #### ####
 
 #### Non-Customizable Functions ####
 backup_file()
 {
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments received." 101
 	case $# in
-		0) fail_notice_exit "(${FUNCNAME[0]}) No Arguments provided." 101 ;;
 		1)
 			backup_target="$1"
 			debug_print -e -Y -S "(${FUNCNAME[0]}) No backup destination specified."
@@ -91,25 +91,24 @@ backup_file()
 catch_exit()
 {
 	code=$?
-	debug_print -e -B -S "START DATE: $START_DATE"
-	debug_print -e -B -S "END DATE: $(date +%m-%d-%y_%H:%M:%S)"
+	debug_print -e -B -S "(${FUNCNAME[0]}) START DATE: $START_DATE"
+	debug_print -e -B -S "(${FUNCNAME[0]}) END DATE: $(date +%m-%d-%y_%H:%M:%S)"
 	debug_print -e -B -S "$0 ran for  $(( $(date +%s) - $START_TIME ))s"
 	case $code in
 			# Exit codes from https://www.tldp.org/LDP/abs/html/exitcodes.html
-		0) debug_print -e -G -S "Successful Exit: $code" ;;
-		1) debug_print -e -R -S "General Fatal Exit: $code " ;;
-		2) debug_print -e -R -S "Misuse of shell builtins: $code" ;;
-		126) debug_print -e -R -S "Command invoked cannot execute: $code" ;;
-		127) debug_print -e -R -S "Command not found: $code" ;;
-		128) debug_print -e -R -S "Invalid argument to exit: $code" ;;
-		129|13[0-9]|14[0-9]|15[0-9]|16[0-5])debug_print -e -R -S "Fatal error signal: $code" ;;
-		130) debug_print -e -Y -S "Script terminated by Control-C: $code" ;;
+		0) debug_print -e -G -S "(${FUNCNAME[0]}) Successful Exit: $code" ;;
+		1) debug_print -e -R -S "(${FUNCNAME[0]}) General Fatal Exit: $code " ;;
+		2) debug_print -e -R -S "(${FUNCNAME[0]}) Misuse of shell builtins: $code" ;;
+		126) debug_print -e -R -S "(${FUNCNAME[0]}) Command invoked cannot execute: $code" ;;
+		127) debug_print -e -R -S "(${FUNCNAME[0]}) Command not found: $code" ;;
+		128) debug_print -e -R -S "(${FUNCNAME[0]}) Invalid argument to exit: $code" ;;
+		129|13[0-9]|14[0-9]|15[0-9]|16[0-5])debug_print -e -R -S "(${FUNCNAME[0]}) Fatal error signal: $code" ;;
+		130) debug_print -e -Y -S "(${FUNCNAME[0]}) Script terminated by Control-C: $code" ;;
 			# Custom exit codes
-		100) debug_print -e -Y -S "Unspecified error: $code" ;;
-		101) debug_print -e -R -S "Missing required variable or argument: $code" ;;
-		*) debug_print -e -Y -S "Unknown exit: $code" ;;
+		100) debug_print -e -Y -S "(${FUNCNAME[0]}) Unspecified error: $code" ;;
+		101) debug_print -e -R -S "(${FUNCNAME[0]}) Missing required variable or argument: $code" ;;
 	esac
-	catch_exit_custom "$?"
+	catch_exit_custom "$code"
 	if [ $GARBAGE_COLLECTOR -eq 1 ]; then
 		for t in "${GARBAGE[@]}"
 		do
@@ -120,11 +119,12 @@ catch_exit()
 }
 check_binaries()
 {
-	debug_print -e -B -S "(${FUNCNAME[0]}) PATH=$PATH"
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
 	if [ $# -lt 1 ];then
-		debug_print -e -Y -S "(${FUNCNAME[0]}) No binary package list to check."
+		debug_print -e -Y -S "(${FUNCNAME[0]}) Not enough arguments received."
 		return 0
 	fi
+	debug_print -e -B -S "(${FUNCNAME[0]}) Using PATH=$PATH"
 	missing=0
 	arr=("$@")
 	debug_print -e -B -S "(${FUNCNAME[0]}) Received binary package list: ${arr[*]}"
@@ -134,7 +134,6 @@ check_binaries()
 			debug_print -e -G -S "(${FUNCNAME[0]}) Found $p"
 		else
 			debug_print -e -Y -S "(${FUNCNAME[0]}) Missing binary package: $p"
-			BINARIES_MISSING=( "${BINARIES_MISSING[@]}" "$p" )
 			((missing++))
 		fi
 	done
@@ -142,7 +141,8 @@ check_binaries()
 }
 garbage_add()
 {
-	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) No arguments received." 101
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments received." 101
 	for a in "$@"
 	do
 		debug_print -e -B -S "(${FUNCNAME[0]}) Adding to GARBAGE pile: $a"
@@ -152,7 +152,8 @@ garbage_add()
 }
 garbage_dump()
 {
-	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) No arguments received." 101
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments received." 101
 	for i in "$@"
 	do
 		if [ -f "$i" ];then
@@ -172,6 +173,7 @@ garbage_dump()
 }
 debug_state()
 {
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
 	debug_print -e -B -S "(${FUNCNAME[0]}) Current Template Variable State: "
 	debug_print -e -B -S "(${FUNCNAME[0]}) WORK_DIR: $WORK_DIR"
 	debug_print -e -B -S "(${FUNCNAME[0]}) FORCE_FLAG: $(var_state $FORCE_FLAG)"
@@ -188,26 +190,33 @@ debug_state()
 }
 fail_notice_exit()
 {
-	if [ $# -eq 0 ]; then
-		desc="Unknown"
-		error_code=100
-	elif [ $# -eq 1 ]; then
-		desc="$1"
-		error_code=100
-	elif [ $# -gt 2 ]; then
-		debug_print -e -Y "(${FUNCNAME[0]}) Received more than 2 required args: $*"
-		desc="$1"
-		error_code="$2"
-	else
-		desc="$1"
-		error_code="$2"
-	fi
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
+	case "$#" in
+		0)
+			desc="Unknown"
+			error_code=100
+			;;
+		1)
+			desc="$1"
+			error_code=100
+			;;
+		2)
+			desc="$1"
+			error_code="$2"
+			;;
+		*)
+			debug_print -e -Y "(${FUNCNAME[0]}) Received more than 2 required args: $*"
+			desc="$1"
+			error_code="$2"
+			;;
+	esac
 	local_print -e -R -S "Failure: $desc"
 	exit $error_code
 }
 get_response()
 {
-	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing question argument." 101
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments received." 101
 	debug_print -e -B -S "(${FUNCNAME[0]}) Received question: $1"
 	reply=""
 	[ $FORCE_FLAG -eq 1 ] && reply="y"
@@ -234,43 +243,38 @@ get_response()
 local_print()
 {
 	if [ $LOGGING -eq 1 ]; then
-		cprint -e -l "$LOG_FILE" "$@"
-		return 0
+		cprint -l "$LOG_FILE" "$@"
 	else
-		cprint -e "$@"
-		return 0
+		cprint "$@"
 	fi
 }
 debug_print()
 {
-	if [ $LOGGING -eq 1 ]; then
-		cprint -e -l "$LOG_FILE" "$@"
-		return 0
-	elif [ $DEBUG -eq 1 ]; then
-		cprint -e "$@"
-		return 0
+	if [ $LOGGING -eq 1 ] && [ $DEBUG -eq 1 ]; then
+		cprint -l "$LOG_FILE" "$@"
+	elif [ $LOGGING -eq 1 ] && [ $DEBUG -eq 0 ]; then
+		cprint -l "$LOG_FILE" "$@" >/dev/null 2>&1
+	elif [ $LOGGING -eq 0 ] && [ $DEBUG -eq 1 ]; then
+		cprint "$@"
 	fi
 }
 main()
 {
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
 	[ $DEBUG -eq 1 ] && VERBOSE="v"
 	[ $DEBUG -eq 0 ] && QUIET="q"
 	if [ $LOGGING -eq 1 ] && [ ! -f "$LOG_FILE" ]; then
-		touch "$LOG_FILE"
-		debug_print -e -B -S "(${FUNCNAME[0]}) Created Log File: $LOG_FILE @ $START_DATE" -l "$LOG_FILE"
+		touch "$LOG_FILE" || fail_notice_exit "(${FUNCNAME[0]}) Unable to create log file @ $LOG_FILE"
+		debug_print -e -B -S "(${FUNCNAME[0]}) Created Log File: $LOG_FILE @ $START_DATE"
 	fi
 	debug_state
 	check_binaries "${BINARIES_REQUIRED[@]}"
-	return_code=$?
-	[ $return_code -ne 0 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing $return_code required binaries." 101
-	check_binaries "${BINARIES_OPTIONAL[@]}"
-	return_code=$?
-	[ $return_code -ne 0 ] && debug_print -Y -S "(${FUNCNAME[0]}) Missing $return_code optional binaries."
-	[ ${#BINARIES_MISSING[@]} -gt 0 ] && debug_print -Y -S "(${FUNCNAME[0]}) Missing the following binaries: ${BINARIES_MISSING[*]}"
+	[ $? -ne 0 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing $? required binaries."
 	main_custom
 }
 parse_args()
 {
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args ($#): $*"
 	EXTRA_ARGS=()
 	while [ ${#} -gt 0 ]; do
 		case "${1}" in
@@ -369,10 +373,10 @@ cprint()
 		[ -z "${CPRINT_FOREGROUND}" ] && CPRINT_FOREGROUND=""
 		[ -z "${CPRINT_BACKGROUND}" ] && CPRINT_BACKGROUND=""
 		RESET=$(CPRINT_translate_color_code "RESET")
-		if [ -f "$(which printf 2>/dev/null)" ];then
+		if [ ! -f "$(which printf 2>/dev/null)" ] || [ ! -z ${USE_ECHO} ]; then
+			[ ! -z ${CPRINT_ERR_OUT} ] && (>&2 echo -n -e "$CPRINT_FOREGROUND""$CPRINT_BACKGROUND""$CPRINT_STRING""$RESET") || echo -n -e "$CPRINT_FOREGROUND""$CPRINT_BACKGROUND""$CPRINT_STRING""$RESET"
+		else
 			[ ! -z ${CPRINT_ERR_OUT} ] && (>&2 printf -- "$CPRINT_FOREGROUND$CPRINT_BACKGROUND%$CPRINT_POS"s"$RESET" "$CPRINT_STRING") || printf -- "$CPRINT_FOREGROUND$CPRINT_BACKGROUND%$CPRINT_POS"s"$RESET" "$CPRINT_STRING"
-		else # printf doesn't exist
-			[ ! -z ${CPRINT_ERR_OUT} ] && (>&2 echo "$CPRINT_FOREGROUND""$CPRINT_BACKGROUND""$CPRINT_STRING""$RESET") || echo "$CPRINT_FOREGROUND""$CPRINT_BACKGROUND""$CPRINT_STRING""$RESET"
 		fi
 		[ ! -z ${CPRINT_LOG_CPRINT_STYLED} ] && echo -e "$CPRINT_STRING" >> "$CPRINT_LOG_CPRINT_STYLED"
 	}
@@ -423,7 +427,7 @@ cprint()
 			"RESET") CODE='m' ;;
 		esac
 		case "$(uname -s)" in
-			"Darwin") echo "\033[""$CODE" ;;
+			"Darwin" | "FreeBSD") echo "\033[""$CODE" ;;
 			"Linux") echo "\e[""$CODE" ;;
 			*)
 				echo "Unknown System: $(uname -s)"
@@ -505,6 +509,7 @@ cprint()
 				"-B" | "--blue") CPRINT_FOREGROUND="$(CPRINT_translate_color_code 'FGBLUE')" ;;
 				"-C" | "--cyan") CPRINT_FOREGROUND="$(CPRINT_translate_color_code 'FGCYAN')" ;;
 				"-P" | "--purple") CPRINT_FOREGROUND="$(CPRINT_translate_color_code 'FGPURPLE')" ;;
+				"--use-echo") USE_ECHO=1 ;;
 				"-Z" | "--random") CPRINT_FOREGROUND="$(CPRINT_translate_color_code "FG$(CPRINT_random_color)")" ;;
 				"-L" | "--log-styled")
 					if [ -d "$2" ]; then
@@ -563,59 +568,6 @@ catch_exit_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 }
-get_autopkg_trust_behavior()
-{
-	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
-	R=$(defaults read com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO 2>/dev/null)
-	if [ $? -ne 0 ]; then
-		debug_print -B -S "(${FUNCNAME[0]}) Key FAIL_RECIPES_WITHOUT_TRUST_INFO not set or some other error ($?)."
-		return 66
-	else
-		case "$R" in
-			0)
-				debug_print -R -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to False."
-				return 0
-				;;
-			1)
-				debug_print -G -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to True."
-				return 1
-				;;
-			*)
-				debug_print -R -S "(${FUNCNAME[0]}) FAIL_RECIPES_WITHOUT_TRUST_INFO set to Unknown value: $R."
-				return 66
-				;;
-			esac
-	fi
-}
-set_autopkg_trust_behavior()
-{
-	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
-	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Not enough arguments provided."
-	case "$1" in
-		0 | "true" | "yes" | "YES" | "TRUE")
-			action="write"
-			value="-bool YES"
-			;;
-		1 | "false" | "no" | "NO" | "FALSE")
-			action="write"
-			value="-bool NO"
-			;;
-		"NONE" | "none" | "RESET" | "reset")
-			value=""
-			action="delete"
-			;;
-		*)
-			fail_notice_exit "(${FUNCNAME[0]}) Incorrect argument provided."
-			;;
-	esac
-	defaults $action com.github.autopkg FAIL_RECIPES_WITHOUT_TRUST_INFO $value
-	return_code=$?
-	case "$return_code" in
-		0) debug_print -G -S "(${FUNCNAME[0]}) Successful action $action to FAIL_RECIPES_WITHOUT_TRUST_INFO with value: $value";;
-		*) debug_print -R -S "(${FUNCNAME[0]}) Failed action $action to FAIL_RECIPES_WITHOUT_TRUST_INFO with value: $value" ;;
-	esac
-	return $return_codes
-}
 debug_state_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
@@ -628,21 +580,19 @@ main_custom()
 	for R in "${RECIPE_NAMES[@]}"
 	do
 		BLOCK="##########"
+		if [ ${#ADD_CATALOGS[@]} -gt 0 ] || [ ${#REMOVE_CATALOGS[@]} -gt 0 ]; then
+			local_print -C -S "$BLOCK Catalog modifications for $R $BLOCK"
+			update_catalog "$R"
+			local_print -C -S "$BLOCK $BLOCK"
+		fi
+		if [ $FORMAT_SUBDIR -eq 1 ]; then
+			local_print -C -S "$BLOCK Formatting MUNKI_REPO_SUBDIR for $R $BLOCK"
+			update_subdir "$R"
+			local_print -C -S "$BLOCK $BLOCK"
+		fi
 		if [ $INFO -eq 1 ]; then
 			local_print -C -S "$BLOCK Info for $R $BLOCK"
 			autopkg info --override-dir="$OVERRIDE_DIR" "$R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $TRUST -eq 1 ]; then
-			local_print -C -S "$BLOCK Trust Action for $R $BLOCK"
-			autopkg update-trust-info --override-dir="$OVERRIDE_DIR" "$R"
-			[ $? -eq 0 ] && local_print -G -S "Trust Successful for $R"
-			[ $? -ne 0 ] && local_print -R -S "Trust Failed for $R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $VERIFY -eq 1 ]; then
-			local_print -C -S "$BLOCK Verify Action $R $BLOCK"
-			autopkg verify-trust-info --override-dir="$OVERRIDE_DIR" "$R"
 			local_print -C -S "$BLOCK $BLOCK"
 		fi
 	done
@@ -652,33 +602,27 @@ parse_args_custom()
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 	while [ ${#} -gt 0 ]; do
 		case "${1}" in
-			"--get-trust-behavior")
-				get_autopkg_trust_behavior
-				case "$?" in
-					0) local_print -R -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = FALSE";;
-					1) local_print -G -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = TRUE";;
-					*) local_print -Y -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = NOT SET";;
-				esac
-				exit 0
-				;;
 			"--info" | "--i") INFO=$(var_toggle $INFO) ;;
 			"--name" | "--n")
-				RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "$2")
+				RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "$2" )
 				shift
 				;;
+			"--add-catalog")
+				ADD_CATALOGS=( "${ADD_CATALOGS[@]}" "$2" )
+				shift
+				;;
+			"--remove-catalog")
+				REMOVE_CATALOGS=( "${REMOVE_CATALOGS[@]}" "$2" )
+				shift
+				;;
+			"--remove-catalog-all") REMOVE_CATALOGS=( "ALL" ) ;;
 			"--override-dir")
 				[ ! -d "$2" ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid override_dir, it is not a directory: $2"
 				OVERRIDE_DIR="$2"
 				shift
 				;;
+			"--format-repo-subdir") FORMAT_SUBDIR=$(var_toggle $FORMAT_SUBDIR) ;;
 			"--select" | "--s") SELECT=$(var_toggle $SELECT) ;;
-			"--set-trust-behavior-"*)
-				set_autopkg_trust_behavior "$(echo $1 | cut -d '-' -f6)"
-				[ $? -ne 0 ] && fail_notice_exit "Failed to set FAIL_RECIPES_WITHOUT_TRUST_INFO to $(echo $1 | cut -d '-' -f6)"
-				exit 0
-				;;
-			"--trust" | "-t") TRUST=$(var_toggle $TRUST) ;;
-			"--verify" | "-v") VERIFY=$(var_toggle $VERIFY) ;;
 			*)
 				debug_print -e -B -S "Processing Unknown Argument: $1"
 				if [ ${#} -eq 1 ];then
@@ -764,20 +708,137 @@ usage_custom()
 	echo -n "	[--select|-s]: Interactively select a recipe from specified Override Directory. Default: "
 	[ $SELECT -eq 0 ] && local_print -R "$(var_state $SELECT)"
 	[ $SELECT -eq 1 ] && local_print -G "$(var_state $SELECT)"
-	echo -n "	[--trust|-t]: Trust a recipe. Default: "
-	[ $TRUST -eq 0 ] && local_print -R "$(var_state $TRUST)"
-	[ $TRUST -eq 1 ] && local_print -G "$(var_state $TRUST)"
-	echo -n "	[--verify|-v]: Verify trust info. Default: "
-	[ $VERIFY -eq 0 ] && local_print -R "$(var_state $VERIFY)"
-	[ $VERIFY -eq 1 ] && local_print -G "$(var_state $VERIFY)"
-	echo ""
-	echo "	[OPTIONS]"
-	echo "	--get-trust-behavior: Retrieve the value of FAIL_RECIPES_WITHOUT_TRUST_INFO from com.github.autopkg."
-	echo "	--set-trust-behavior-[true|false|none]: Set the value of FAIL_RECIPES_WITHOUT_TRUST_INFO for com.github.autopkg to true, false or none."
+	echo "	--add-catalog catalog: Add a catalog to a recipe."
+	echo "	--remove-catalog catalog: Remove a catalog from a recipe."
+	echo "	--remove-catalog-all: Remove all catalogs from a recipe."
+	echo -n "	--format-repo-subdir: Format the MUNKI_REPO_SUBDIR to be developer_name/app_name. Default: "
+	[ $FORMAT_SUBDIR -eq 0 ] && local_print -R "$(var_state $FORMAT_SUBDIR)"
+	[ $FORMAT_SUBDIR -eq 1 ] && local_print -G "$(var_state $FORMAT_SUBDIR)"
 }
 #### ####
 
 #### Custom Functions ####
+update_subdir()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
+	RECIPE_FILE=$OVERRIDE_DIR/$1
+	app_name=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:NAME")
+	if [ $? -ne 0 ]; then
+		local_print -R -S "(${FUNCNAME[0]}) Failed to retrieve applcation name for $1."
+		return 1
+	fi
+	app_dev=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:developer" 2> /dev/null )
+	if [ $? -ne 0 ]; then
+		local_print -Y -S "(${FUNCNAME[0]}) No developer key for $1. Adding empty key to fill later."
+		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:developer string"
+		[ $? -ne 0 ] && local_print -R -S "(${FUNCNAME[0]}) Failed to add developer key to $1."
+	fi
+	if [[ $app_dev == "" ]]; then
+		local_print -n -G -S "Enter developer name: "
+		read app_dev </dev/tty
+		debug_print --use-echo -G -S "(${FUNCNAME[0]}) Set developer name to: $app_dev"
+	fi
+	current_subdir_name=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:MUNKI_REPO_SUBDIR" 2> /dev/null)
+	if [ $? -ne 0 ]; then
+		local_print -R  -S "(${FUNCNAME[0]}) Failed to retrieve MUNKI_REPO_SUBDIR for $1."
+		return 1
+	fi
+	debug_print --use-echo -B -S "(${FUNCNAME[0]}) Retrieved Application Name: $app_name"
+	debug_print --use-echo -B -S "(${FUNCNAME[0]}) Retrieved Developer Name: $app_dev"
+
+	debug_print --use-echo -B -S "(${FUNCNAME[0]}) Current MUNKI_REPO_SUBDIR: $current_subdir_name"
+	if [[ $app_dev != "" ]]; then
+		local_print --use-echo -Y -S "(${FUNCNAME[0]}) Proposed MUNKI_REPO_SUBDIR: $app_dev/$app_name"
+	else
+		local_print --use-echo -Y -S "(${FUNCNAME[0]}) Proposed MUNKI_REPO_SUBDIR: $app_name"
+	fi
+	local_print --use-echo -Y -S "(${FUNCNAME[0]}) (will actaully use %NAME% in place of app name ($app_name) in plist)"
+	get_response "Write proposed changes?"
+	if [ $? -eq 0 ]; then
+		return_code=0
+		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "set Input:pkginfo:developer $app_dev"
+		return_code=$?
+		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "set Input:MUNKI_REPO_SUBDIR $app_dev/%NAME%"
+		return_code=$(($return_code+$?))
+		if [ $return_code -eq 0 ]; then
+			local_print -G -S "(${FUNCNAME[0]}) Successfuly wrote changes to $1"
+		else
+			local_print -R -S "(${FUNCNAME[0]}) Failed to write changes to $1"
+		fi
+	else
+		local_print -Y -S "(${FUNCNAME[0]}) Skipping write to $1"
+	fi
+	return 0
+}
+update_catalog()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
+	CURRENT_CATALOGS=()
+	RECIPE_FILE=$OVERRIDE_DIR/$1
+	while :
+	do
+		c=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:catalogs:${#CURRENT_CATALOGS[@]}" 2> /dev/null)
+		[ $? -ne 0 ] && break
+		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$c" )
+	done
+	local_print -G -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
+	for t in "${REMOVE_CATALOGS[@]}"
+	do
+		if [[ "$t" == "ALL" ]]; then
+			debug_print -B -S "(${FUNCNAME[0]}) Found ALL argument. Will remove all catalogs."
+			REMOVE_CATALOGS=()
+			CURRENT_CATALOGS=()
+			break
+		fi
+	done
+	for d in "${REMOVE_CATALOGS[@]}"
+	do
+		idx=0
+		for di in "${CURRENT_CATALOGS[@]}"
+		do
+			if [[ "$d" == "$di" ]]; then
+				local_print -Y -S "(${FUNCNAME[0]}) Removing catalog $d from (${CURRENT_CATALOGS[*]})"
+				CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]:0:$idx}" "${CURRENT_CATALOGS[@]:$(($idx+1))}" )
+			fi
+			((idx++))
+		done
+	done
+	for a in "${ADD_CATALOGS[@]}"
+	do
+		duplicate_found=0
+		for ai in "${CURRENT_CATALOGS[@]}"
+		do
+			[[ "$a" == "$ai" ]] && duplicate_found=1
+		done
+		if [ $duplicate_found -eq 1 ]; then
+			debug_print -B -S "(${FUNCNAME[0]}) Skipping add catalog $a, because it already exists in (${CURRENT_CATALOGS[*]})"
+		else
+			debug_print -B -S "(${FUNCNAME[0]}) Adding catalog $a to (${CURRENT_CATALOGS[*]})"
+			CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$a" )
+		fi
+	done
+	debug_print -B -S "(${FUNCNAME[0]}) Final catalog (${#CURRENT_CATALOGS[@]}) list to write: (${CURRENT_CATALOGS[*]})"
+	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "delete Input:pkginfo:catalogs"
+	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs array"
+	count=0
+	for c in "${CURRENT_CATALOGS[@]}"
+	do
+		return_code=0
+		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs:$count string"
+		return_code=$?
+		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "set Input:pkginfo:catalogs:$count $c"
+		return_code=$((($return_code+$?)))
+		if [ $return_code -eq 0 ]; then
+			local_print -G -S "(${FUNCNAME[0]}) Successfully wrote catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
+		else
+			local_print -R -S "(${FUNCNAME[0]}) Failed to write catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
+		fi
+		((count++))
+	done
+	return 0
+}
 #### ####
 
 #### Customizable Script Entry ####
