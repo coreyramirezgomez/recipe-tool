@@ -635,7 +635,7 @@ main_custom()
 		REMOVE_CATALOG_COUNT=0
 		for A in "${ACTIONS[@]}"
 		do
-			local_print -C -S "$BLOCK Performing Action $A for $R $BLOCK"
+			local_print -C -S "$BLOCK Performing $A Action for $R $BLOCK"
 			case $A in
 				"ADD_CATALOG")
 					local_print -C -S "Adding Catalog ${ADD_CATALOG[$ADD_CATALOG_COUNT]}"
