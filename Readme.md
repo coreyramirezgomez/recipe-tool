@@ -41,10 +41,13 @@ Usage for recipe-tool:
 ## Examples ##
 
 - Show info, trust, and verify recipe VLC.munki.recipe:
-	bash recipe-tool --info --trust --verify VLC.munki.recipe
+
+`bash recipe-tool --info --trust --verify VLC.munki.recipe`
 
 - Verify all recipes in OVERRIDE_DIR:
-	bash recipe-tool --verify ALL
+
+`bash recipe-tool --verify ALL`
 
 - Interactively select recipes from OVERRIDE_DIR, show info, add catalog testing, and show info (again):
-	bash recipe-tool --select --info --add-catalog testing --info
+
+`bash recipe-tool --select --info --add-catalog testing --info`
