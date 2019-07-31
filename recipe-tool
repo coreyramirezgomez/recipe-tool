@@ -35,15 +35,12 @@ LOGGING=0
 #### ####
 
 #### Custom Variables ####
-INFO=0
+ACTIONS=()
 OVERRIDE_DIR="$(defaults read com.github.autopkg RECIPE_OVERRIDE_DIRS)"
 SELECT=0
 RECIPE_NAMES=()
 ADD_CATALOGS=()
 REMOVE_CATALOGS=()
-FORMAT_SUBDIR=0
-TRUST=0
-VERIFY=0
 #### ####
 
 #### Non-Customizable Functions ####
@@ -631,37 +628,53 @@ set_autopkg_trust_behavior()
 main_custom()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
-
+	BLOCK="##########"
 	for R in "${RECIPE_NAMES[@]}"
 	do
-		BLOCK="##########"
-		if [ ${#ADD_CATALOGS[@]} -gt 0 ] || [ ${#REMOVE_CATALOGS[@]} -gt 0 ]; then
-			local_print -C -S "$BLOCK Catalog modifications for $R $BLOCK"
-			update_catalog "$R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $FORMAT_SUBDIR -eq 1 ]; then
-			local_print -C -S "$BLOCK Formatting MUNKI_REPO_SUBDIR for $R $BLOCK"
-			update_subdir "$R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $INFO -eq 1 ]; then
-			local_print -C -S "$BLOCK Info for $R $BLOCK"
-			autopkg info --override-dir="$OVERRIDE_DIR" "$R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $TRUST -eq 1 ]; then
-			local_print -C -S "$BLOCK Trust Action for $R $BLOCK"
-			autopkg update-trust-info --override-dir="$OVERRIDE_DIR" "$R"
-			[ $? -eq 0 ] && local_print -G -S "Trust Successful for $R"
-			[ $? -ne 0 ] && local_print -R -S "Trust Failed for $R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
-		if [ $VERIFY -eq 1 ]; then
-			local_print -C -S "$BLOCK Verify Action $R $BLOCK"
-			autopkg verify-trust-info --override-dir="$OVERRIDE_DIR" "$R"
-			local_print -C -S "$BLOCK $BLOCK"
-		fi
+		ADD_CATALOG_COUNT=0
+		REMOVE_CATALOG_COUNT=0
+		for A in "${ACTIONS[@]}"
+		do
+			local_print -C -S "$BLOCK Performing Action $A for $R $BLOCK"
+			case $A in
+				"ADD_CATALOG")
+					local_print -C -S "Adding Catalog ${ADD_CATALOG[$ADD_CATALOG_COUNT]}"
+					add_catalog "$R" "${ADD_CATALOG[$ADD_CATALOG_COUNT]}"
+					return_code=$?
+					((ADD_CATALOG_COUNT++))
+					;;
+				"FORMAT_SUBDIR")
+					local_print -C -S "Formatting MUNKI_REPO_SUBDIR"
+					update_subdir "$R"
+					return_code=$?
+					;;
+				"INFO")
+					local_print -C -S "$BLOCK Info $BLOCK"
+					autopkg info --override-dir="$OVERRIDE_DIR" "$R"
+					return_code=$?
+					;;
+				"REMOVE_CATALOG")
+					remove_catalog "$R" "${REMOVE_CATALOG[$REMOVE_CATALOG_COUNT]}"
+					return_code=$?
+					((ADD_CATALOG_COUNT++))
+					;;
+				"TRUST")
+					local_print -C -S "$BLOCK Trust Action for $R $BLOCK"
+					autopkg update-trust-info --override-dir="$OVERRIDE_DIR" "$R"
+					return_code=$?
+					[ $return_code -eq 0 ] && local_print -G -S "Trust Successful for $R"
+					[ $return_code -ne 0 ] && local_print -R -S "Trust Failed for $R"
+					;;
+				"VERIFY")
+					local_print -C -S "$BLOCK Verify Action $R $BLOCK"
+					autopkg verify-trust-info --override-dir="$OVERRIDE_DIR" "$R"
+					return_code=$?
+					;;
+				*) fail_notice_exit "(${FUNCNAME[0]}) Unknown action: $A";;
+			esac
+			[ $return_code -eq 0 ] && local_print -G -S "$BLOCK Done ($return_code) $BLOCK"
+			[ $return_code -ne 0 ] && local_print -Y -S "$BLOCK Done ($return_code) $BLOCK"
+		done
 	done
 }
 parse_args_custom()
@@ -669,34 +682,39 @@ parse_args_custom()
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 	while [ ${#} -gt 0 ]; do
 		case "${1}" in
-			"--info" | "--i") INFO=$(var_toggle $INFO) ;;
+			"--info" | "--i") ACTIONS=( "${ACTIONS[@]}" "INFO" );;
 			"--name" | "--n")
 				RECIPE_NAMES=( "${RECIPE_NAMES[@]}" "$2" )
 				shift
 				;;
 			"--add-catalog")
+				ACTIONS=( "${ACTIONS[@]}" "ADD_CATALOG" )
 				ADD_CATALOGS=( "${ADD_CATALOGS[@]}" "$2" )
 				shift
 				;;
 			"--remove-catalog")
+				ACTIONS=( "${ACTIONS[@]}" "REMOVE_CATALOG" )
 				REMOVE_CATALOGS=( "${REMOVE_CATALOGS[@]}" "$2" )
 				shift
 				;;
-			"--remove-catalog-all") REMOVE_CATALOGS=( "ALL" ) ;;
+			"--remove-catalog-all")
+				ACTIONS=( "${ACTIONS[@]}" "REMOVE_CATALOG" )
+				REMOVE_CATALOGS=( "ALL" )
+				;;
 			"--override-dir")
 				[ ! -d "$2" ] && fail_notice_exit "(${FUNCNAME[0]}) Invalid override_dir, it is not a directory: $2"
 				OVERRIDE_DIR="$2"
 				shift
 				;;
-			"--format-repo-subdir") FORMAT_SUBDIR=$(var_toggle $FORMAT_SUBDIR) ;;
-			"--select" | "--s") SELECT=$(var_toggle $SELECT) ;;
+			"--format-repo-subdir") ACTIONS=( "${ACTIONS[@]}" "FORMAT_SUBDIR" );;
+			"--select" | "--s") SELECT=$(var_toggle $SELECT);;
 			"--set-trust-behavior-"*)
 				set_autopkg_trust_behavior "$(echo $1 | cut -d '-' -f6)"
 				[ $? -ne 0 ] && fail_notice_exit "Failed to set FAIL_RECIPES_WITHOUT_TRUST_INFO to $(echo $1 | cut -d '-' -f6)"
 				exit 0
 				;;
-			"--trust" | "-t") TRUST=$(var_toggle $TRUST) ;;
-			"--verify" | "-v") VERIFY=$(var_toggle $VERIFY) ;;
+			"--trust" | "-t") ACTIONS=( "${ACTIONS[@]}" "TRUST" );;
+			"--verify" | "-v") ACTIONS=( "${ACTIONS[@]}" "VERIFY" );;
 			*)
 				debug_print -e -B -S "Processing Unknown Argument: $1"
 				if [ ${#} -eq 1 ];then
@@ -774,9 +792,7 @@ usage_custom()
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
 	echo ""
 	echo "	[OPTIONS] [RECIPE_NAME]"
-	echo -n "	[--info|-i]: Show recipe info. Default: "
-	[ $INFO -eq 0 ] && local_print -R "$(var_state $INFO)"
-	[ $INFO -eq 1 ] && local_print -G "$(var_state $INFO)"
+	echo "	[--info|-i]: Show recipe info."
 	echo "	[--name|-n] recipe: Specifiy a recipe name. Use this flage for each recipe. Specifying 'ALL' will select all recipes available in the OVERRIDE_DIR."
 	echo "	--override-dir absolute-path-to-dir: Set the Override Directory. Default: $OVERRIDE_DIR"
 	echo -n "	[--select|-s]: Interactively select a recipe from specified Override Directory. Default: "
@@ -785,15 +801,9 @@ usage_custom()
 	echo "	--add-catalog catalog: Add a catalog to a recipe."
 	echo "	--remove-catalog catalog: Remove a catalog from a recipe."
 	echo "	--remove-catalog-all: Remove all catalogs from a recipe."
-	echo -n "	--format-repo-subdir: Format the MUNKI_REPO_SUBDIR to be developer_name/app_name. Default: "
-	[ $FORMAT_SUBDIR -eq 0 ] && local_print -R "$(var_state $FORMAT_SUBDIR)"
-	[ $FORMAT_SUBDIR -eq 1 ] && local_print -G "$(var_state $FORMAT_SUBDIR)"
-	echo -n "	[--trust|-t]: Trust a recipe. Default: "
-	[ $TRUST -eq 0 ] && local_print -R "$(var_state $TRUST)"
-	[ $TRUST -eq 1 ] && local_print -G "$(var_state $TRUST)"
-	echo -n "	[--verify|-v]: Verify trust info. Default: "
-	[ $VERIFY -eq 0 ] && local_print -R "$(var_state $VERIFY)"
-	[ $VERIFY -eq 1 ] && local_print -G "$(var_state $VERIFY)"
+	echo "	--format-repo-subdir: Format the MUNKI_REPO_SUBDIR to be developer_name/app_name."
+	echo "	[--trust|-t]: Trust a recipe."
+	echo "	[--verify|-v]: Verify trust info."
 	echo ""
 	echo "	[OPTIONS]"
 	echo "	--get-trust-behavior: Retrieve the value of FAIL_RECIPES_WITHOUT_TRUST_INFO from com.github.autopkg."
@@ -855,12 +865,41 @@ update_subdir()
 	fi
 	return 0
 }
-update_catalog()
+add_catalog()
 {
 	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
-	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
-	CURRENT_CATALOGS=()
-	RECIPE_FILE=$OVERRIDE_DIR/$1
+	[ $# -lt 2 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
+	local RECIPE_FILE=$OVERRIDE_DIR/$1
+	local CATALOG="$2"
+	local CURRENT_CATALOGS=()
+	local c
+	while :
+	do
+		c=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:catalogs:${#CURRENT_CATALOGS[@]}" 2> /dev/null)
+		[ $? -ne 0 ] && break
+		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$c" )
+	done
+	debug_print -B -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
+	for c in "${CURRENT_CATALOGS[@]}"
+	do
+		if [[ "$c" == "$CATALOG" ]]; then
+			debug_print -B -S "(${FUNCNAME[0]}) Skipping add catalog $CATALOG, because it already exists in (${CURRENT_CATALOGS[*]})"
+			return 1
+		fi
+	done
+	CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$CATALOG" )
+	debug_print -B -S "(${FUNCNAME[0]}) Final catalog (${#CURRENT_CATALOGS[@]}) list to write: (${CURRENT_CATALOGS[*]})"
+	write_catalogs "$RECIPE_FILE" "${CURRENT_CATALOGS[@]}"
+	return $?
+}
+remove_catalog()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	[ $# -lt 2 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required arguments."
+	local RECIPE_FILE=$OVERRIDE_DIR/$1
+	local CATALOG="$2"
+	local CURRENT_CATALOGS=()
+	local c
 	while :
 	do
 		c=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:catalogs:${#CURRENT_CATALOGS[@]}" 2> /dev/null)
@@ -868,60 +907,54 @@ update_catalog()
 		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$c" )
 	done
 	local_print -G -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
-	for t in "${REMOVE_CATALOGS[@]}"
-	do
-		if [[ "$t" == "ALL" ]]; then
-			debug_print -B -S "(${FUNCNAME[0]}) Found ALL argument. Will remove all catalogs."
-			REMOVE_CATALOGS=()
-			CURRENT_CATALOGS=()
-			break
-		fi
-	done
-	for d in "${REMOVE_CATALOGS[@]}"
-	do
-		idx=0
-		for di in "${CURRENT_CATALOGS[@]}"
-		do
-			if [[ "$d" == "$di" ]]; then
-				local_print -Y -S "(${FUNCNAME[0]}) Removing catalog $d from (${CURRENT_CATALOGS[*]})"
-				CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]:0:$idx}" "${CURRENT_CATALOGS[@]:$(($idx+1))}" )
-			fi
-			((idx++))
-		done
-	done
-	for a in "${ADD_CATALOGS[@]}"
-	do
-		duplicate_found=0
-		for ai in "${CURRENT_CATALOGS[@]}"
-		do
-			[[ "$a" == "$ai" ]] && duplicate_found=1
-		done
-		if [ $duplicate_found -eq 1 ]; then
-			debug_print -B -S "(${FUNCNAME[0]}) Skipping add catalog $a, because it already exists in (${CURRENT_CATALOGS[*]})"
-		else
-			debug_print -B -S "(${FUNCNAME[0]}) Adding catalog $a to (${CURRENT_CATALOGS[*]})"
-			CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$a" )
-		fi
-	done
-	debug_print -B -S "(${FUNCNAME[0]}) Final catalog (${#CURRENT_CATALOGS[@]}) list to write: (${CURRENT_CATALOGS[*]})"
-	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "delete Input:pkginfo:catalogs"
-	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs array"
-	count=0
+	[[ "$CATALOG" == "ALL" ]] && CURRENT_CATALOGS=()
+	local idx=0
 	for c in "${CURRENT_CATALOGS[@]}"
 	do
-		return_code=0
+		if [[ "$c" == "$CATALOG" ]]; then
+			debug_print -B -S "(${FUNCNAME[0]}) found catalog $CATALOG remove @ index $idx in (${CURRENT_CATALOGS[*]})"
+			CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]:0:$idx}" "${CURRENT_CATALOGS[@]:$(($idx+1))}")
+			break
+		fi
+		((idx++))
+	done
+	debug_print -B -S "(${FUNCNAME[0]}) Final catalog (${#CURRENT_CATALOGS[@]}) list to write: (${CURRENT_CATALOGS[*]})"
+	write_catalogs "$RECIPE_FILE" "${CURRENT_CATALOGS[@]}"
+	return $?
+}
+write_catalogs()
+{
+	debug_print -e -B -S "(${FUNCNAME[0]}) Started ${FUNCNAME[0]} function with args: $*"
+	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
+	local RECIPE_FILE=$1
+	shift
+	local CATALOGS_TO_WRITE="$*"
+	local return_code=0
+	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "delete Input:pkginfo:catalogs"
+	return_code=$?
+	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs array"
+	return_code=$(($return_code+$?))
+	if [ $return_code -ne 0 ];then
+		local_print -R -S "(${FUNCNAME[0]}) Failed to modify catalog array in plist."
+		return 1
+	fi
+	local count=0
+	for c in "${CATALOGS_TO_WRITE[@]}"
+	do
+		local inner_return_code=0
 		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs:$count string"
-		return_code=$?
+		inner_return_code=$?
 		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "set Input:pkginfo:catalogs:$count $c"
-		return_code=$((($return_code+$?)))
-		if [ $return_code -eq 0 ]; then
-			local_print -G -S "(${FUNCNAME[0]}) Successfully wrote catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
+		inner_return_code=$((($inner_return_code+$?)))
+		if [ $inner_return_code -eq 0 ]; then
+			debug_print -G -S "(${FUNCNAME[0]}) Successfully wrote catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
 		else
-			local_print -R -S "(${FUNCNAME[0]}) Failed to write catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
+			return_code=$(($inner_return_code+$return_code))
+			debug_print -R -S "(${FUNCNAME[0]}) Failed to write catalog $c ($(($count+1)) of ${#CURRENT_CATALOGS[@]})"
 		fi
 		((count++))
 	done
-	return 0
+	return $return_code
 }
 #### ####
 
