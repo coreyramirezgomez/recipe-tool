@@ -638,8 +638,8 @@ main_custom()
 			local_print -C -S "$BLOCK Performing $A Action for $R $BLOCK"
 			case $A in
 				"ADD_CATALOG")
-					local_print -C -S "Adding Catalog ${ADD_CATALOG[$ADD_CATALOG_COUNT]}"
-					add_catalog "$R" "${ADD_CATALOG[$ADD_CATALOG_COUNT]}"
+					local_print -C -S "Adding Catalog ${ADD_CATALOGS[$ADD_CATALOG_COUNT]}"
+					add_catalog "$R" "${ADD_CATALOGS[$ADD_CATALOG_COUNT]}"
 					return_code=$?
 					((ADD_CATALOG_COUNT++))
 					;;
@@ -652,8 +652,8 @@ main_custom()
 					return_code=$?
 					;;
 				"REMOVE_CATALOG")
-					local_print -C -S "Removing Catalog ${REMOVE_CATALOG[$REMOVE_CATALOG_COUNT]}"
-					remove_catalog "$R" "${REMOVE_CATALOG[$REMOVE_CATALOG_COUNT]}"
+					local_print -C -S "Removing Catalog ${REMOVE_CATALOGS[$REMOVE_CATALOG_COUNT]}"
+					remove_catalog "$R" "${REMOVE_CATALOGS[$REMOVE_CATALOG_COUNT]}"
 					return_code=$?
 					((ADD_CATALOG_COUNT++))
 					;;
@@ -705,6 +705,15 @@ parse_args_custom()
 				;;
 			"--format-repo-subdir") ACTIONS=( "${ACTIONS[@]}" "FORMAT_SUBDIR" );;
 			"--select" | "--s") SELECT=$(var_toggle $SELECT);;
+			"--get-trust-behavior")
+				get_autopkg_trust_behavior
+				case "$?" in
+					0) local_print -R -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = FALSE" ;;
+					1) local_print -G -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = TRUE" ;;
+					*) local_print -Y -S "FAIL_RECIPES_WITHOUT_TRUST_INFO = NOT SET" ;;
+				esac
+				exit 0
+				;;
 			"--set-trust-behavior-"*)
 				set_autopkg_trust_behavior "$(echo $1 | cut -d '-' -f6)"
 				[ $? -ne 0 ] && fail_notice_exit "Failed to set FAIL_RECIPES_WITHOUT_TRUST_INFO to $(echo $1 | cut -d '-' -f6)"
@@ -874,7 +883,7 @@ add_catalog()
 	do
 		c=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:catalogs:${#CURRENT_CATALOGS[@]}" 2> /dev/null)
 		[ $? -ne 0 ] && break
-		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$c" )
+		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$(echo $c)" )
 	done
 	debug_print -B -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
 	for c in "${CURRENT_CATALOGS[@]}"
@@ -901,9 +910,9 @@ remove_catalog()
 	do
 		c=$(/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "print Input:pkginfo:catalogs:${#CURRENT_CATALOGS[@]}" 2> /dev/null)
 		[ $? -ne 0 ] && break
-		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$c" )
+		CURRENT_CATALOGS=( "${CURRENT_CATALOGS[@]}" "$(echo $c)" )
 	done
-	local_print -G -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
+	debug_print -B -S "Current Catalogs (${#CURRENT_CATALOGS[@]}): (${CURRENT_CATALOGS[*]})"
 	[[ "$CATALOG" == "ALL" ]] && CURRENT_CATALOGS=()
 	local idx=0
 	for c in "${CURRENT_CATALOGS[@]}"
@@ -925,7 +934,7 @@ write_catalogs()
 	[ $# -lt 1 ] && fail_notice_exit "(${FUNCNAME[0]}) Missing required argument."
 	local RECIPE_FILE=$1
 	shift
-	local CATALOGS_TO_WRITE="$*"
+	local CATALOGS_TO_WRITE=( $@ )
 	local return_code=0
 	/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "delete Input:pkginfo:catalogs"
 	return_code=$?
@@ -938,6 +947,7 @@ write_catalogs()
 	local count=0
 	for c in "${CATALOGS_TO_WRITE[@]}"
 	do
+		c="$(echo $c)"
 		local inner_return_code=0
 		/usr/libexec/PlistBuddy "$RECIPE_FILE" -c "add Input:pkginfo:catalogs:$count string"
 		inner_return_code=$?
